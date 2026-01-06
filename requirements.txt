@@ -1,0 +1,12 @@
+langgraph
+dotenv
+langchain
+langchain-openai
+langchain-community
+fastapi
+uvicorn
+streamlit
+psycopg-binary
+psycopg-pool
+langgraph-checkpoint-postgres
+sqlmodel
