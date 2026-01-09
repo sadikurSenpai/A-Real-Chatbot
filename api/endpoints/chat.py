@@ -10,6 +10,8 @@ from services.nodes.chat import chat
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 import uuid
 import sys
+from langgraph.prebuilt import tools_condition
+from services.nodes.chat import tool_node
 from dotenv import load_dotenv
 load_dotenv()
 import os
@@ -39,9 +41,11 @@ checkpointer.setup()
 
 graph = StateGraph(ChatState)
 graph.add_node('chat', chat)
-graph.add_edge(START, 'chat')
-graph.add_edge('chat', END)
+graph.add_node('tools', tool_node)
 
+graph.add_edge(START, 'chat')
+graph.add_conditional_edges('chat', tools_condition)
+graph.add_edge('tools', 'chat')
 
 @router.post('/chat', tags=['Chat'])
 def chat_endpoint(request: ChatSchema):
@@ -87,8 +91,9 @@ def chat_endpoint(request: ChatSchema):
             config=config, 
             stream_mode="messages"
         ):
-            if chunk.content:
-                yield chunk.content
+            if isinstance(chunk, AIMessage):
+                if chunk.content:
+                    yield chunk.content
 
     return StreamingResponse(
         token_generator(),

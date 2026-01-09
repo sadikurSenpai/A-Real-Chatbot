@@ -10,3 +10,4 @@ psycopg-binary
 psycopg-pool
 langgraph-checkpoint-postgres
 sqlmodel
+ddgs
