@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from psycopg_pool import ConnectionPool
 from api.schemas.chat_schema import ChatSchema
 from langchain_core.messages import HumanMessage, AIMessage
@@ -42,7 +43,7 @@ graph.add_edge(START, 'chat')
 graph.add_edge('chat', END)
 
 
-@router.post('/chat', tags=['Chat'], response_model=dict)
+@router.post('/chat', tags=['Chat'])
 def chat_endpoint(request: ChatSchema):
     thread_id = request.thread_id
     new_thread = False
@@ -78,19 +79,24 @@ def chat_endpoint(request: ChatSchema):
     workflow = graph.compile(checkpointer=checkpointer)
     user_message = HumanMessage(content=request.msg)
     
-    result = workflow.invoke({
-        'messages': [user_message]
-    }, config=config)
+    def token_generator():
+        for chunk, meta in workflow.stream(
+            {
+                'messages': [user_message]
+            }, 
+            config=config, 
+            stream_mode="messages"
+        ):
+            if chunk.content:
+                yield chunk.content
 
-    last_ai_message = next(
-        msg for msg in reversed(result["messages"])
-        if isinstance(msg, AIMessage)
+    return StreamingResponse(
+        token_generator(),
+        media_type="text/plain",
+        headers={
+            "X-Thread-ID": thread_id
+        }
     )
-
-    return {
-        'thread_id': thread_id,
-        'msg': last_ai_message.content
-    }
 
 @router.get('/chat/history/{user_id}', tags=['Chat'])
 def get_user_history(user_id: str):

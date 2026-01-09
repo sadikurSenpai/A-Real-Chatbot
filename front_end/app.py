@@ -65,46 +65,7 @@ def create_new_chat():
     st.session_state.thread_id = None
     st.session_state.messages = []
 
-def send_message():
-    user_input = st.session_state.chat_input_key
-    if not user_input:
-        return
 
-    # Add user message to local history
-    st.session_state.messages.append({"role": "user", "content": user_input})
-
-    # Prepare payload
-    payload = {
-        "user_id": st.session_state.user_id,
-        "msg": user_input,
-        "thread_id": st.session_state.thread_id
-    }
-
-    try:
-        # The backend returns a standard JSON response
-        response = requests.post(CHAT_URL, json=payload)
-        
-        if response.status_code == 200:
-            data = response.json()
-            
-            # 1. Update Thread ID (if it was a new chat)
-            new_thread_id = data.get("thread_id")
-            if new_thread_id:
-                st.session_state.thread_id = new_thread_id
-            
-            # 2. Get the message content
-            response_message = data.get("msg", "")
-            
-            # 3. Save to history
-            st.session_state.messages.append({"role": "assistant", "content": response_message})
-        
-        else:
-            st.error(f"Server Error: {response.status_code}")
-            
-    except requests.exceptions.ConnectionError:
-        st.error("Could not connect to the backend server.")
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
 
 # --- UI Logic ---
 
@@ -136,6 +97,7 @@ else:
         
         if st.button("+ New Chat", type="primary", use_container_width=True):
             create_new_chat()
+            st.rerun()
             
         st.subheader("History")
         threads = get_user_threads(st.session_state.user_id)
@@ -148,6 +110,7 @@ else:
                 label = tid[:8] + "..." # Truncate for display
                 if st.button(label, key=tid, use_container_width=True):
                     select_thread(tid)
+                    st.rerun()
 
     # Chat Area
     st.header("Chat Session")
@@ -162,4 +125,48 @@ else:
             st.markdown(msg["content"])
 
     # Chat Input
-    st.chat_input("Type your message...", key="chat_input_key", on_submit=send_message)
+    if user_input := st.chat_input("Type your message..."):
+        # Add user message to local history
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        # Prepare payload
+        payload = {
+            "user_id": st.session_state.user_id,
+            "msg": user_input,
+            "thread_id": st.session_state.thread_id
+        }
+
+        with st.chat_message("assistant"):
+            try:
+                # Request with streaming enabled
+                response = requests.post(CHAT_URL, json=payload, stream=True)
+                
+                if response.status_code == 200:
+                    # 1. Update Thread ID (from headers)
+                    new_thread_id = response.headers.get("X-Thread-ID")
+                    if new_thread_id:
+                        st.session_state.thread_id = new_thread_id
+                    
+                    # 2. Stream the response
+                    message_placeholder = st.empty()
+                    full_response = ""
+                    
+                    for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                        if chunk:
+                            full_response += chunk
+                            message_placeholder.markdown(full_response + "▌")
+                    
+                    message_placeholder.markdown(full_response)
+                    
+                    # 3. Save to history
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                
+                else:
+                    st.error(f"Server Error: {response.status_code}")
+                    
+            except requests.exceptions.ConnectionError:
+                st.error("Could not connect to the backend server.")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
