@@ -69,6 +69,9 @@ def chat_endpoint(request: ChatSchema):
     config = {
         'configurable': {
             'thread_id': thread_id
+        },
+        'metadata': {
+            'thread_id': thread_id
         }
     }
     
